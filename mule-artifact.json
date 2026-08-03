@@ -1,0 +1,5 @@
+{
+  "minMuleVersion": "4.4.0",
+  "name": "timezone-mcp-server",
+  "description": "World Clock and Timezone Converter MCP Server implementing Model Context Protocol"
+}
