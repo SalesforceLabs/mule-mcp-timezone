@@ -1,8 +1,5 @@
 # Timezone MCP Server - Deployment Checklist
 
-**Version**: 1.0.0  
-**Date**: July 1, 2026  
-**Status**: ✅ Ready for Deployment
 
 This guide covers deploying the Timezone MCP server to your own MuleSoft (Anypoint) instance. To register the deployed server in Salesforce (or another MCP client), refer to the accompanying blog post.
 
