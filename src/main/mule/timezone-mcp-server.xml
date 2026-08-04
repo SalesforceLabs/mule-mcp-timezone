@@ -425,71 +425,10 @@ output application/json
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 import try from dw::Runtime
-
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
+import resolve from dw::Timezones
 
 var rawCity = vars.arguments.city default ""
-var inputCity = lower(rawCity)
-var timezone = cityMap[inputCity] default rawCity
+var timezone = resolve(rawCity)
 // Coerce inside try() so an unknown city/timezone yields a clean error
 // instead of throwing (which would leak the script via the global handler).
 var attempt = try(() -> now() >> (timezone as TimeZone))
@@ -528,72 +467,10 @@ else
             <ee:message>
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
+import resolve from dw::Timezones
 
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
-
-var fromInput = lower(vars.arguments.from_city default "")
-var toInput = lower(vars.arguments.to_city default "")
-var fromTz = cityMap[fromInput] default vars.arguments.from_city
-var toTz = cityMap[toInput] default vars.arguments.to_city
+var fromTz = resolve(vars.arguments.from_city)
+var toTz = resolve(vars.arguments.to_city)
 var inputTime = vars.arguments.time default "12:00"
 
 // The input time is wall-clock time in the SOURCE zone. Build a local
@@ -647,6 +524,8 @@ var dayNote = if (targetDay > sourceDay) " (next day)"
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 
+import resolve from dw::Timezones
+
 fun parseOffsetMinutes(offset) = do {
     var sign = if (offset[0] == "-") -1 else 1
     var parts = (offset[1 to -1]) splitBy ":"
@@ -656,71 +535,8 @@ fun parseOffsetMinutes(offset) = do {
     sign * (hours * 60 + mins)
 }
 
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
-
-var input1 = lower(vars.arguments.city1 default "")
-var input2 = lower(vars.arguments.city2 default "")
-var tz1 = cityMap[input1] default vars.arguments.city1
-var tz2 = cityMap[input2] default vars.arguments.city2
+var tz1 = resolve(vars.arguments.city1)
+var tz2 = resolve(vars.arguments.city2)
 
 var now1 = now() >> (tz1 as TimeZone)
 var now2 = now() >> (tz2 as TimeZone)
@@ -764,20 +580,13 @@ else
             <ee:message>
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
-
-var allCities = {
-    "America": ["New York", "Los Angeles", "Chicago", "Denver", "Phoenix", "Houston", "Dallas", "Miami", "Seattle", "Boston", "Washington DC", "Atlanta", "Toronto", "Vancouver", "Mexico City", "Sao Paulo", "Buenos Aires"],
-    "Europe": ["London", "Paris", "Berlin", "Madrid", "Rome", "Amsterdam", "Zurich", "Moscow", "Istanbul"],
-    "Asia": ["Dubai", "Abu Dhabi", "Riyadh", "Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Karachi", "Dhaka", "Bangkok", "Singapore", "Kuala Lumpur", "Jakarta", "Hong Kong", "Shanghai", "Beijing", "Taipei", "Seoul", "Tokyo"],
-    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"],
-    "Pacific": ["Auckland", "Honolulu"]
-}
+import citiesByRegion from dw::Timezones
 
 var regionFilter = vars.arguments.region default ""
 var filtered = if (regionFilter == "" or regionFilter == null)
-    allCities
+    citiesByRegion
 else
-    { (regionFilter): allCities[regionFilter] default [] }
+    { (regionFilter): citiesByRegion[regionFilter] default [] }
 
 var resultText = filtered pluck ((cities, region) ->
     (region as String) ++ ": " ++ (cities joinBy ", ")
