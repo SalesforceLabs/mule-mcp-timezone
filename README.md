@@ -499,8 +499,19 @@ curl -H "Authorization: Bearer $TOKEN" https://anypoint.mulesoft.com/accounts/ap
 
 ```
 mule-mcp-timezone/
-├── src/main/mule/
-│   └── timezone-mcp-server.xml       ← MCP server source (OAuth validation included)
+├── src/main/
+│   ├── mule/
+│   │   ├── timezone-mcp-server.xml   ← Main flow: HTTP listener, CORS, OAuth validation, JSON-RPC routing
+│   │   ├── global.xml                ← Global configs (HTTP listener + Anypoint auth request)
+│   │   ├── timezone-tools-list.xml   ← tools/list response (tool schemas)
+│   │   ├── timezone-tools-call.xml   ← tools/call dispatcher
+│   │   ├── get-current-time.xml      ← get_current_time tool
+│   │   ├── convert-time.xml          ← convert_time tool
+│   │   ├── time-difference.xml       ← time_difference tool
+│   │   └── list-timezones.xml        ← list_timezones tool
+│   └── resources/
+│       ├── config.yaml               ← App properties (port, CORS, timeouts) — override via CloudHub
+│       └── dw/Timezones.dwl          ← Shared DataWeave module (city→IANA map, regions)
 ├── scripts/
 │   ├── build.sh                      ← Builds the deployable JAR (mvn clean package)
 │   ├── verify-build.sh               ← Checks the built JAR exists and has the OAuth config
@@ -509,5 +520,6 @@ mule-mcp-timezone/
 │   ├── test-oauth.sh                 ← OAuth functionality tests
 │   └── test-mcp-compliance.sh        ← MCP protocol compliance tests
 ├── .env.example                      ← Template for local config (copy to .env)
+├── pom.xml                           ← Maven build (Mule 4.9, Java 17)
 └── README.md                         ← This file (single source of truth)
 ```
