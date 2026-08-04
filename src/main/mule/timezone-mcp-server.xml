@@ -17,34 +17,33 @@
 -->
 <mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
-      xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
         http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
-        http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd">
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
-    <http:listener-config name="mcp-listener-config" doc:name="HTTP Listener Config">
-        <http:listener-connection host="0.0.0.0" port="${http.port}"/>
-    </http:listener-config>
+    <!-- Global configs (HTTP listener + Anypoint auth request) are in global.xml        -->
+    <!-- Sub-flows are each in their own file:                                            -->
+    <!--   timezone-tools-list.xml  — tools/list response                                -->
+    <!--   timezone-tools-call.xml  — tools/call dispatcher                              -->
+    <!--   get-current-time.xml     — get_current_time tool                              -->
+    <!--   convert-time.xml         — convert_time tool                                  -->
+    <!--   time-difference.xml      — time_difference tool                               -->
+    <!--   list-timezones.xml       — list_timezones tool                                -->
 
-    <!-- HTTP Request Config for OAuth Token Validation -->
-    <http:request-config name="anypoint-auth-config" doc:name="Anypoint Auth Config">
-        <http:request-connection host="anypoint.mulesoft.com" port="443" protocol="HTTPS"/>
-    </http:request-config>
+    <!-- Optional: enable API Manager autodiscovery if you have an API instance configured.
+         Set api.id in config.yaml (or as a CloudHub property) to the numeric API instance ID.
+         Requires adding xmlns:api-gateway and its schema location to the <mule> element.
+         <api-gateway:autodiscovery apiId="${api.id}" flowRef="mcp-server-flow" doc:name="API Autodiscovery" /> -->
 
-    <!-- API Autodiscovery - Account restrictions may prevent this from working -->
-    <!-- Basic Endpoint policies can work without autodiscovery -->
-    <!-- <api-gateway:autodiscovery apiId="21003192" flowRef="mcp-server-flow" doc:name="API Autodiscovery" /> -->
-
-    <!-- Main MCP Server Flow -->
+    <!-- Main MCP Server Flow — HTTP listener, CORS, OAuth validation, JSON-RPC routing -->
     <flow name="mcp-server-flow" doc:name="MCP Server Flow">
         <http:listener doc:name="MCP Endpoint"
                        config-ref="mcp-listener-config"
-                       path="/mcp"
+                       path="${mcp.listener.path}"
                        allowedMethods="POST,OPTIONS">
             <http:response statusCode="#[vars.httpStatus default 200]">
                 <http:headers>#[vars.outboundHeaders default {}]</http:headers>
@@ -54,7 +53,8 @@
             </http:error-response>
         </http:listener>
 
-        <!-- Set CORS and Content-Type headers -->
+        <!-- Set CORS and Content-Type headers.
+             cors.allowedOrigins is defined in config.yaml; override per environment. -->
         <ee:transform doc:name="Set Response Headers">
             <ee:variables>
                 <ee:set-variable variableName="outboundHeaders"><![CDATA[%dw 2.0
@@ -62,29 +62,47 @@ output application/java
 ---
 {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": p('cors.allowedOrigins'),
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization"
 }]]></ee:set-variable>
             </ee:variables>
         </ee:transform>
 
-        <!-- Extract Authorization header -->
-        <ee:transform doc:name="Extract Auth Header">
-            <ee:variables>
-                <ee:set-variable variableName="authHeader"><![CDATA[%dw 2.0
+        <!-- Handle OPTIONS preflight before auth.
+             Browsers send OPTIONS without an Authorization header; running it through
+             the auth check would always return 401, breaking CORS for all POST calls. -->
+        <choice doc:name="Handle OPTIONS Preflight">
+            <when expression="#[attributes.method == 'OPTIONS']">
+                <ee:transform doc:name="CORS Preflight Response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus"><![CDATA[200]]></ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </when>
+            <otherwise>
+                <!-- POST requests — extract and validate the Bearer token -->
+
+                <ee:transform doc:name="Extract Auth Header">
+                    <ee:variables>
+                        <ee:set-variable variableName="authHeader"><![CDATA[%dw 2.0
 output application/java
 ---
 attributes.headers['authorization'] default ""]]></ee:set-variable>
-            </ee:variables>
-        </ee:transform>
+                    </ee:variables>
+                </ee:transform>
 
-        <!-- Validate Bearer token -->
-        <choice doc:name="Validate Auth">
-            <when expression="#[!(vars.authHeader contains 'Bearer ')]">
-                <ee:transform doc:name="401 Unauthorized">
-                    <ee:message>
-                        <ee:set-payload><![CDATA[%dw 2.0
+                <choice doc:name="Validate Auth">
+                    <when expression="#[!(vars.authHeader contains 'Bearer ')]">
+                        <ee:transform doc:name="401 Unauthorized">
+                            <ee:message>
+                                <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -95,52 +113,95 @@ output application/json
         "message": "Unauthorized: Missing or invalid Bearer token"
     }
 }]]></ee:set-payload>
-                    </ee:message>
-                    <ee:variables>
-                        <ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
-                    </ee:variables>
-                </ee:transform>
-            </when>
-            <otherwise>
-                <!-- Bearer token present - continue with MCP processing -->
-                <!-- The MCP client validates tokens before sending, so presence check is sufficient -->
-                <logger level="INFO" doc:name="Log Auth Header" message="Authorization header present - processing request"/>
+                            </ee:message>
+                            <ee:variables>
+                                <ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
+                            </ee:variables>
+                        </ee:transform>
+                    </when>
+                    <otherwise>
+                        <!-- Save the original JSON-RPC request; the validation HTTP call overwrites the payload -->
+                        <set-variable variableName="mcpRequest" value="#[payload]" doc:name="Save Request Payload"/>
 
-                <!-- Parse JSON-RPC request -->
-                    <ee:transform doc:name="Parse Request">
-                        <ee:variables>
-                            <ee:set-variable variableName="requestId"><![CDATA[%dw 2.0
+                        <!-- Validate the token: GET /accounts/api/profile with the Bearer token.
+                             /accounts/api/profile returns 200 for a valid token and 401 for an invalid one.
+                             Works with client-credentials tokens (which have no user).
+                             A non-200 or connectivity error marks the request unauthorized.
+                             responseTimeout (5 s) is configured on anypoint-auth-config in global.xml. -->
+                        <try doc:name="Validate OAuth Token">
+                            <http:request method="GET" config-ref="anypoint-auth-config"
+                                          path="${anypoint.auth.profilePath}" doc:name="Call Anypoint /profile">
+                                <http:headers><![CDATA[#[{"Authorization": vars.authHeader}]]]></http:headers>
+                            </http:request>
+                            <logger level="INFO" doc:name="Log Auth Success" message="OAuth token validated successfully"/>
+                            <error-handler>
+                                <on-error-continue type="ANY" doc:name="Token Invalid">
+                                    <logger level="WARN" doc:name="Log Auth Failure"
+                                            message="#['OAuth token validation failed: ' ++ (error.errorType.identifier default 'UNKNOWN')]"/>
+                                    <set-variable variableName="authFailed" value="#[true]" doc:name="Mark Auth Failed"/>
+                                </on-error-continue>
+                            </error-handler>
+                        </try>
+
+                        <set-payload value="#[vars.mcpRequest]" doc:name="Restore Request Payload"/>
+
+                        <choice doc:name="Token Valid?">
+                            <when expression="#[vars.authFailed default false]">
+                                <ee:transform doc:name="401 Invalid Token">
+                                    <ee:message>
+                                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+        "code": -32000,
+        "message": "Unauthorized: Invalid or expired OAuth token"
+    }
+}]]></ee:set-payload>
+                                    </ee:message>
+                                    <ee:variables>
+                                        <ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
+                                    </ee:variables>
+                                </ee:transform>
+                            </when>
+
+                            <otherwise>
+                                <!-- Parse JSON-RPC request -->
+                                <ee:transform doc:name="Parse Request">
+                                    <ee:variables>
+                                        <ee:set-variable variableName="requestId"><![CDATA[%dw 2.0
 output application/java
 ---
 payload.id]]></ee:set-variable>
-                            <ee:set-variable variableName="method"><![CDATA[%dw 2.0
+                                        <ee:set-variable variableName="method"><![CDATA[%dw 2.0
 output application/java
 ---
 payload.method]]></ee:set-variable>
-                            <ee:set-variable variableName="params"><![CDATA[%dw 2.0
+                                        <ee:set-variable variableName="params"><![CDATA[%dw 2.0
 output application/java
 ---
 payload.params default {}]]></ee:set-variable>
-                        </ee:variables>
-                    </ee:transform>
+                                    </ee:variables>
+                                </ee:transform>
 
-                    <logger level="INFO" doc:name="Log Request"
-                            message="#['MCP Request - Method: ' ++ (vars.method default 'unknown') ++ ', ID: ' ++ (vars.requestId default 'null')]"/>
+                                <logger level="INFO" doc:name="Log Request"
+                                        message="#['MCP Request - Method: ' ++ (vars.method default 'unknown') ++ ', ID: ' ++ (vars.requestId default 'null')]"/>
 
-                    <!-- Route by JSON-RPC method -->
-                    <choice doc:name="Route Method">
-                        <!-- initialize - MCP handshake -->
-                        <when expression="#[vars.method == 'initialize']">
-                            <ee:transform doc:name="Initialize Response">
-                                <ee:message>
-                                    <ee:set-payload><![CDATA[%dw 2.0
+                                <!-- Route by JSON-RPC method -->
+                                <choice doc:name="Route Method">
+                                    <when expression="#[vars.method == 'initialize']">
+                                        <ee:transform doc:name="Initialize Response">
+                                            <ee:message>
+                                                <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
     "jsonrpc": "2.0",
     "id": vars.requestId,
     "result": {
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": p('mcp.protocol.version'),
         "capabilities": {
             "tools": {}
         },
@@ -150,16 +211,15 @@ output application/json
         }
     }
 }]]></ee:set-payload>
-                                </ee:message>
-                            </ee:transform>
-                        </when>
+                                            </ee:message>
+                                        </ee:transform>
+                                    </when>
 
-                        <!-- notifications/initialized - client signal -->
-                        <when expression="#[vars.method == 'notifications/initialized']">
-                            <logger level="INFO" doc:name="Log Initialized" message="Client initialized notification received"/>
-                            <ee:transform doc:name="Null Response">
-                                <ee:message>
-                                    <ee:set-payload><![CDATA[%dw 2.0
+                                    <when expression="#[vars.method == 'notifications/initialized']">
+                                        <logger level="INFO" doc:name="Log Initialized" message="Client initialized notification received"/>
+                                        <ee:transform doc:name="Null Response">
+                                            <ee:message>
+                                                <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -167,25 +227,22 @@ output application/json
     "id": null,
     "result": null
 }]]></ee:set-payload>
-                                </ee:message>
-                            </ee:transform>
-                        </when>
+                                            </ee:message>
+                                        </ee:transform>
+                                    </when>
 
-                        <!-- tools/list - return available tools -->
-                        <when expression="#[vars.method == 'tools/list']">
-                            <flow-ref doc:name="Tools List" name="timezone-tools-list-flow"/>
-                        </when>
+                                    <when expression="#[vars.method == 'tools/list']">
+                                        <flow-ref doc:name="Tools List" name="timezone-tools-list-flow"/>
+                                    </when>
 
-                        <!-- tools/call - execute a tool -->
-                        <when expression="#[vars.method == 'tools/call']">
-                            <flow-ref doc:name="Tools Call" name="timezone-tools-call-flow"/>
-                        </when>
+                                    <when expression="#[vars.method == 'tools/call']">
+                                        <flow-ref doc:name="Tools Call" name="timezone-tools-call-flow"/>
+                                    </when>
 
-                        <!-- Unknown method -->
-                        <otherwise>
-                            <ee:transform doc:name="Method Not Found">
-                                <ee:message>
-                                    <ee:set-payload><![CDATA[%dw 2.0
+                                    <otherwise>
+                                        <ee:transform doc:name="Method Not Found">
+                                            <ee:message>
+                                                <ee:set-payload><![CDATA[%dw 2.0
 output application/json
 ---
 {
@@ -196,14 +253,19 @@ output application/json
         "message": "Method not found: " ++ (vars.method default "unknown")
     }
 }]]></ee:set-payload>
-                                </ee:message>
-                            </ee:transform>
-                        </otherwise>
-                    </choice>
+                                            </ee:message>
+                                        </ee:transform>
+                                    </otherwise>
+                                </choice>
+                            </otherwise>
+                        </choice>
+                    </otherwise>
+                </choice>
             </otherwise>
         </choice>
 
-        <!-- Global error handler -->
+        <!-- Global error handler — catches any unhandled exception and returns
+             a well-formed JSON-RPC -32603 Internal Error response. -->
         <error-handler>
             <on-error-continue type="ANY">
                 <ee:transform doc:name="Error Response">
@@ -226,500 +288,6 @@ output application/json
                 </ee:transform>
             </on-error-continue>
         </error-handler>
-    </flow>
-
-    <!-- Tools List Flow - Returns available timezone tools -->
-    <flow name="timezone-tools-list-flow" doc:name="Tools List Flow">
-        <ee:transform doc:name="Tool Definitions">
-            <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
-output application/json
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "result": {
-        "tools": [
-            {
-                "name": "get_current_time",
-                "description": "Get the current date and time for a city or timezone. Returns formatted local time with timezone abbreviation.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "City name (e.g., 'Tokyo', 'New York', 'London') or IANA timezone ID (e.g., 'America/New_York')"
-                        }
-                    },
-                    "required": ["city"]
-                }
-            },
-            {
-                "name": "convert_time",
-                "description": "Convert a specific time from one timezone to another. Useful for scheduling meetings across timezones.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "time": {
-                            "type": "string",
-                            "description": "Time to convert in HH:mm format (24-hour) e.g., '14:30' or '09:00'"
-                        },
-                        "from_city": {
-                            "type": "string",
-                            "description": "Source city or timezone (e.g., 'New York', 'Asia/Tokyo')"
-                        },
-                        "to_city": {
-                            "type": "string",
-                            "description": "Target city or timezone (e.g., 'London', 'Europe/Paris')"
-                        }
-                    },
-                    "required": ["time", "from_city", "to_city"]
-                }
-            },
-            {
-                "name": "time_difference",
-                "description": "Get the time difference in hours between two cities. Shows which city is ahead and by how many hours.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "city1": {
-                            "type": "string",
-                            "description": "First city or timezone (e.g., 'New York', 'America/Chicago')"
-                        },
-                        "city2": {
-                            "type": "string",
-                            "description": "Second city or timezone (e.g., 'Tokyo', 'Asia/Kolkata')"
-                        }
-                    },
-                    "required": ["city1", "city2"]
-                }
-            },
-            {
-                "name": "list_timezones",
-                "description": "List available timezones, optionally filtered by region. Regions include: America, Europe, Asia, Africa, Australia, Pacific.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "region": {
-                            "type": "string",
-                            "description": "Optional region filter (e.g., 'Asia', 'Europe', 'America'). If omitted, returns all supported cities."
-                        }
-                    },
-                    "required": []
-                }
-            }
-        ]
-    }
-}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
-    </flow>
-
-    <!-- Tools Call Flow - Routes to specific tool implementations -->
-    <flow name="timezone-tools-call-flow" doc:name="Tools Call Flow">
-        <!-- Extract tool name and arguments -->
-        <ee:transform doc:name="Extract Tool Info">
-            <ee:variables>
-                <ee:set-variable variableName="toolName"><![CDATA[%dw 2.0
-output application/java
----
-vars.params.name]]></ee:set-variable>
-                <ee:set-variable variableName="arguments"><![CDATA[%dw 2.0
-output application/java
----
-vars.params.arguments default {}]]></ee:set-variable>
-            </ee:variables>
-        </ee:transform>
-
-        <logger level="INFO" doc:name="Log Tool Call"
-                message="#['Tool Call: ' ++ (vars.toolName default 'unknown') ++ ', Args: ' ++ write(vars.arguments, 'application/json')]"/>
-
-        <!-- Route to specific tool flow -->
-        <choice doc:name="Route Tool">
-            <when expression="#[vars.toolName == 'get_current_time']">
-                <flow-ref doc:name="Get Current Time" name="get-current-time-flow"/>
-            </when>
-            <when expression="#[vars.toolName == 'convert_time']">
-                <flow-ref doc:name="Convert Time" name="convert-time-flow"/>
-            </when>
-            <when expression="#[vars.toolName == 'time_difference']">
-                <flow-ref doc:name="Time Difference" name="time-difference-flow"/>
-            </when>
-            <when expression="#[vars.toolName == 'list_timezones']">
-                <flow-ref doc:name="List Timezones" name="list-timezones-flow"/>
-            </when>
-            <otherwise>
-                <ee:transform doc:name="Unknown Tool Error">
-                    <ee:message>
-                        <ee:set-payload><![CDATA[%dw 2.0
-output application/json
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "error": {
-        "code": -32602,
-        "message": "Unknown tool: " ++ (vars.toolName default "null")
-    }
-}]]></ee:set-payload>
-                    </ee:message>
-                </ee:transform>
-            </otherwise>
-        </choice>
-    </flow>
-
-    <!-- Get Current Time Flow -->
-    <flow name="get-current-time-flow" doc:name="Get Current Time">
-        <ee:transform doc:name="Calculate Current Time">
-            <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
-output application/json
-
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
-
-var inputCity = lower(vars.arguments.city default "")
-var timezone = cityMap[inputCity] default vars.arguments.city
-var currentTime = now() >> (timezone as TimeZone)
-var formatted = currentTime as String {format: "EEEE, MMMM d, yyyy h:mm:ss a"}
-var tzAbbr = currentTime as String {format: "z"}
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": formatted ++ " " ++ tzAbbr ++ " (" ++ timezone ++ ")"
-            }
-        ]
-    }
-}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
-    </flow>
-
-    <!-- Convert Time Flow -->
-    <flow name="convert-time-flow" doc:name="Convert Time">
-        <ee:transform doc:name="Convert Between Timezones">
-            <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
-output application/json
-
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
-
-var fromInput = lower(vars.arguments.from_city default "")
-var toInput = lower(vars.arguments.to_city default "")
-var fromTz = cityMap[fromInput] default vars.arguments.from_city
-var toTz = cityMap[toInput] default vars.arguments.to_city
-var inputTime = vars.arguments.time default "12:00"
-
-var sourceDateTime = if (inputTime contains "T")
-    inputTime as LocalDateTime
-else
-    ((now() as Date) as String ++ "T" ++ inputTime ++ (if (inputTime contains ":") "" else ":00") ++ ":00") as LocalDateTime
-var sourceZoned = sourceDateTime >> (fromTz as TimeZone)
-var targetZoned = sourceZoned >> (toTz as TimeZone)
-
-var sourceFormatted = sourceZoned as String {format: "h:mm a z"}
-var targetFormatted = targetZoned as String {format: "h:mm a z"}
-var targetDate = targetZoned as Date
-var dayDiff = (targetDate - (sourceZoned as Date)) as Number
-var dayNote = if (dayDiff > 0) " (next day)"
-              else if (dayDiff < 0) " (previous day)"
-              else ""
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": sourceFormatted ++ " = " ++ targetFormatted ++ dayNote
-            }
-        ]
-    }
-}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
-    </flow>
-
-    <!-- Time Difference Flow -->
-    <flow name="time-difference-flow" doc:name="Time Difference">
-        <ee:transform doc:name="Calculate Difference">
-            <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
-output application/json
-
-fun parseOffsetMinutes(offset) = do {
-    var sign = if (offset[0] == "-") -1 else 1
-    var parts = (offset[1 to -1]) splitBy ":"
-    var hours = parts[0] as Number
-    var mins = parts[1] as Number
-    ---
-    sign * (hours * 60 + mins)
-}
-
-var cityMap = {
-    "new york": "America/New_York",
-    "nyc": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "la": "America/Los_Angeles",
-    "san francisco": "America/Los_Angeles",
-    "sf": "America/Los_Angeles",
-    "chicago": "America/Chicago",
-    "denver": "America/Denver",
-    "phoenix": "America/Phoenix",
-    "houston": "America/Chicago",
-    "dallas": "America/Chicago",
-    "miami": "America/New_York",
-    "seattle": "America/Los_Angeles",
-    "boston": "America/New_York",
-    "washington dc": "America/New_York",
-    "dc": "America/New_York",
-    "atlanta": "America/New_York",
-    "toronto": "America/Toronto",
-    "vancouver": "America/Vancouver",
-    "mexico city": "America/Mexico_City",
-    "sao paulo": "America/Sao_Paulo",
-    "buenos aires": "America/Argentina/Buenos_Aires",
-    "london": "Europe/London",
-    "paris": "Europe/Paris",
-    "berlin": "Europe/Berlin",
-    "madrid": "Europe/Madrid",
-    "rome": "Europe/Rome",
-    "amsterdam": "Europe/Amsterdam",
-    "zurich": "Europe/Zurich",
-    "moscow": "Europe/Moscow",
-    "istanbul": "Europe/Istanbul",
-    "dubai": "Asia/Dubai",
-    "abu dhabi": "Asia/Dubai",
-    "riyadh": "Asia/Riyadh",
-    "mumbai": "Asia/Kolkata",
-    "delhi": "Asia/Kolkata",
-    "bangalore": "Asia/Kolkata",
-    "chennai": "Asia/Kolkata",
-    "kolkata": "Asia/Kolkata",
-    "karachi": "Asia/Karachi",
-    "dhaka": "Asia/Dhaka",
-    "bangkok": "Asia/Bangkok",
-    "singapore": "Asia/Singapore",
-    "kuala lumpur": "Asia/Kuala_Lumpur",
-    "jakarta": "Asia/Jakarta",
-    "hong kong": "Asia/Hong_Kong",
-    "shanghai": "Asia/Shanghai",
-    "beijing": "Asia/Shanghai",
-    "taipei": "Asia/Taipei",
-    "seoul": "Asia/Seoul",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "melbourne": "Australia/Melbourne",
-    "brisbane": "Australia/Brisbane",
-    "perth": "Australia/Perth",
-    "auckland": "Pacific/Auckland",
-    "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
-}
-
-var input1 = lower(vars.arguments.city1 default "")
-var input2 = lower(vars.arguments.city2 default "")
-var tz1 = cityMap[input1] default vars.arguments.city1
-var tz2 = cityMap[input2] default vars.arguments.city2
-
-var now1 = now() >> (tz1 as TimeZone)
-var now2 = now() >> (tz2 as TimeZone)
-var offset1 = (now1 as String {format: "XXX"})
-var offset2 = (now2 as String {format: "XXX"})
-
-var mins1 = parseOffsetMinutes(offset1)
-var mins2 = parseOffsetMinutes(offset2)
-var diffMinutes = mins2 - mins1
-var diffHours = diffMinutes / 60
-
-var city1Display = vars.arguments.city1 default tz1
-var city2Display = vars.arguments.city2 default tz2
-
-var result = if (diffMinutes == 0)
-    city1Display ++ " and " ++ city2Display ++ " are in the same timezone"
-else if (diffMinutes > 0)
-    city2Display ++ " is " ++ (if (diffHours == floor(diffHours)) (floor(diffHours) as String) else (diffHours as String)) ++ " hours ahead of " ++ city1Display
-else
-    city2Display ++ " is " ++ (if ((-diffHours) == floor(-diffHours)) (floor(-diffHours) as String) else ((-diffHours) as String)) ++ " hours behind " ++ city1Display
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": result
-            }
-        ]
-    }
-}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
-    </flow>
-
-    <!-- List Timezones Flow -->
-    <flow name="list-timezones-flow" doc:name="List Timezones">
-        <ee:transform doc:name="List Available Timezones">
-            <ee:message>
-                <ee:set-payload><![CDATA[%dw 2.0
-output application/json
-
-var allCities = {
-    "America": ["New York", "Los Angeles", "Chicago", "Denver", "Phoenix", "Houston", "Dallas", "Miami", "Seattle", "Boston", "Washington DC", "Atlanta", "Toronto", "Vancouver", "Mexico City", "Sao Paulo", "Buenos Aires"],
-    "Europe": ["London", "Paris", "Berlin", "Madrid", "Rome", "Amsterdam", "Zurich", "Moscow", "Istanbul"],
-    "Asia": ["Dubai", "Abu Dhabi", "Riyadh", "Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Karachi", "Dhaka", "Bangkok", "Singapore", "Kuala Lumpur", "Jakarta", "Hong Kong", "Shanghai", "Beijing", "Taipei", "Seoul", "Tokyo"],
-    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"],
-    "Pacific": ["Auckland", "Honolulu"]
-}
-
-var regionFilter = vars.arguments.region default ""
-var filtered = if (regionFilter == "" or regionFilter == null)
-    allCities
-else
-    { (regionFilter): allCities[regionFilter] default [] }
-
-var resultText = filtered pluck ((cities, region) ->
-    (region as String) ++ ": " ++ (cities joinBy ", ")
-) joinBy "\n"
----
-{
-    "jsonrpc": "2.0",
-    "id": vars.requestId,
-    "result": {
-        "content": [
-            {
-                "type": "text",
-                "text": resultText
-            }
-        ]
-    }
-}]]></ee:set-payload>
-            </ee:message>
-        </ee:transform>
     </flow>
 
 </mule>

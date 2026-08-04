@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Converts a wall-clock time from one city/timezone to another.
+         Uses try() so invalid city names return -32602 rather than throwing. -->
+    <sub-flow name="convert-time-flow" doc:name="Convert Time">
+        <ee:transform doc:name="Convert Between Timezones">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import try from dw::Runtime
+import resolve from dw::Timezones
+
+var fromCity  = vars.arguments.from_city default ""
+var toCity    = vars.arguments.to_city   default ""
+var fromTz    = resolve(fromCity)
+var toTz      = resolve(toCity)
+var inputTime = vars.arguments.time default "12:00"
+
+// Wrap in try() so an invalid city/timezone produces a clean -32602 error
+// instead of propagating a DataWeave exception to the global handler.
+var attempt = try(() -> do {
+    // Build a local date+time string anchored to the source zone's current
+    // UTC offset, so "14:30" in New York is read as 14:30 EDT, not 14:30 UTC.
+    var dateStr = now() as String {format: "yyyy-MM-dd"}
+    var localStr = if (inputTime contains "T")
+        inputTime
+    else
+        dateStr ++ "T" ++ inputTime ++ (if (inputTime contains ":") "" else ":00") ++ ":00"
+    var fromOffset = (now() >> (fromTz as TimeZone)) as String {format: "XXX"}
+    var sourceZoned = (localStr ++ fromOffset) as DateTime
+    var targetZoned = sourceZoned >> (toTz as TimeZone)
+    var sourceDisplay = sourceZoned >> (fromTz as TimeZone)
+    var sourceFormatted = sourceDisplay as String {format: "h:mm a z"}
+    var targetFormatted = targetZoned as String {format: "h:mm a z"}
+    var sourceDay = sourceDisplay as String {format: "yyyy-MM-dd"}
+    var targetDay = targetZoned as String {format: "yyyy-MM-dd"}
+    var dayNote = if (targetDay > sourceDay) " (next day)"
+                  else if (targetDay < sourceDay) " (previous day)"
+                  else ""
+    ---
+    sourceFormatted ++ " = " ++ targetFormatted ++ dayNote
+})
+---
+if (attempt.success)
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": attempt.result
+            }
+        ]
+    }
+}
+else
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "error": {
+        "code": -32602,
+        "message": "Invalid city or timezone. Verify 'from_city' and 'to_city' are supported names or IANA timezone IDs."
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+
+</mule>

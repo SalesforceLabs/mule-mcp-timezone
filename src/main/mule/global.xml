@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <!-- Load application properties from config.yaml.
+         Any property defined here can be overridden at runtime by setting a
+         CloudHub property with the same key (Runtime Manager → App → Properties). -->
+    <configuration-properties file="config.yaml" doc:name="Configuration Properties"/>
+
+    <!-- HTTP Listener Config -->
+    <http:listener-config name="mcp-listener-config" doc:name="HTTP Listener Config">
+        <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+    </http:listener-config>
+
+    <!-- HTTP Request Config for OAuth Token Validation
+         All tunable values are defined in config.yaml under the anypoint.* namespace.
+         Override them as CloudHub properties for GovCloud or private-cloud deployments. -->
+    <http:request-config name="anypoint-auth-config" doc:name="Anypoint Auth Config"
+                         responseTimeout="${anypoint.auth.responseTimeout}">
+        <http:request-connection host="${anypoint.platform.host}" port="443" protocol="HTTPS"
+                                 connectionIdleTimeout="${anypoint.auth.connectionIdleTimeout}"/>
+    </http:request-config>
+
+</mule>

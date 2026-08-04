@@ -28,11 +28,18 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Configuration — load from .env in the repo root (copy .env.example to .env and fill it in)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/.env"
+  set +a
+fi
+
 CLIENT_ID="${CLIENT_ID:-YOUR_CLIENT_ID}"
 CLIENT_SECRET="${CLIENT_SECRET:-YOUR_CLIENT_SECRET}"
 TOKEN_ENDPOINT="${TOKEN_ENDPOINT:-https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token}"
-# Set MCP_URL to your deployed CloudHub endpoint, e.g. https://your-app.region.cloudhub.io/mcp
 MCP_URL="${MCP_URL:-https://YOUR-APP-URL/mcp}"
 
 # Test counters
@@ -214,7 +221,62 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
 run_test "get_current_time returns result" '"result"' "$RESPONSE"
 run_test "get_current_time mentions Tokyo" "Tokyo" "$RESPONSE"
 run_test "get_current_time has content array" '"content"' "$RESPONSE"
-run_test "get_current_time returns text type" '"type":"text"' "$RESPONSE"
+run_test "get_current_time returns text type" '"type": *"text"' "$RESPONSE"
+# Echoes the resolved IANA zone for a friendly city name.
+run_test "get_current_time resolves city to IANA zone" "Asia/Tokyo" "$RESPONSE"
+echo ""
+
+# Test 3.1b: get_current_time accepts a raw IANA timezone ID
+echo -e "${BLUE}Test 3.1b: tools/call${NC} - get_current_time (IANA id)"
+RESPONSE=$(curl -s -X POST "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 31,
+    "method": "tools/call",
+    "params": {
+      "name": "get_current_time",
+      "arguments": {
+        "city": "America/New_York"
+      }
+    }
+  }')
+
+run_test "get_current_time accepts IANA id" '"result"' "$RESPONSE"
+run_test "get_current_time echoes IANA id" "America/New_York" "$RESPONSE"
+echo ""
+
+# Test 3.1c: get_current_time with an unknown city returns a clean error (no source leak)
+echo -e "${BLUE}Test 3.1c: tools/call${NC} - get_current_time (invalid input)"
+RESPONSE=$(curl -s -X POST "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 32,
+    "method": "tools/call",
+    "params": {
+      "name": "get_current_time",
+      "arguments": {
+        "city": "Narnia"
+      }
+    }
+  }')
+
+run_test "Invalid city returns error" '"error"' "$RESPONSE"
+run_test "Invalid city has invalid-params code" '"code": *-32602' "$RESPONSE"
+run_test "Invalid city error is user-friendly" "Unknown city or timezone" "$RESPONSE"
+# Guard against the info-leak bug: the DataWeave source must never appear in the response.
+# This is a negative assertion (passes when "cityMap" is absent), so it can't use run_test.
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+if echo "$RESPONSE" | grep -q "cityMap"; then
+  echo -e "${RED}✗${NC} Invalid city leaks DataWeave source (regression)"
+  FAILED_TESTS=$((FAILED_TESTS + 1))
+else
+  echo -e "${GREEN}✓${NC} Invalid city does not leak DataWeave source"
+  PASSED_TESTS=$((PASSED_TESTS + 1))
+fi
 echo ""
 
 # Test 3.2: convert_time tool
@@ -238,8 +300,40 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
 
 run_test "convert_time returns result" '"result"' "$RESPONSE"
 run_test "convert_time has content" '"content"' "$RESPONSE"
-run_test "convert_time mentions source city" "New York" "$RESPONSE"
-run_test "convert_time mentions target city" "London" "$RESPONSE"
+# convert_time returns times with timezone abbreviations (e.g. "3:00 PM EDT = 8:00 PM BST"),
+# not city names. Assert the conversion separator and an AM/PM time rather than DST-dependent
+# zone abbreviations (EDT/EST, BST/GMT) that would make this seasonally flaky.
+run_test "convert_time shows a conversion" " = " "$RESPONSE"
+run_test "convert_time returns a formatted time" "[AP]M" "$RESPONSE"
+# Correctness: the source side must echo the input wall-clock time (15:00 -> 3:00 PM).
+# This is DST-safe because the source time is exactly what the caller supplied.
+run_test "convert_time reads input as source-local time" "3:00 PM" "$RESPONSE"
+# The source zone label must be the source (New York = EDT/EST), never UTC/GMT-offset,
+# which would indicate the input was misread as UTC (the pre-fix bug).
+run_test "convert_time source is not misread as UTC" "3:00 PM E[SD]T" "$RESPONSE"
+echo ""
+
+# Test 3.2b: convert_time - crossing midnight adds a day note
+echo -e "${BLUE}Test 3.2b: tools/call${NC} - convert_time (day rollover)"
+RESPONSE=$(curl -s -X POST "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 41,
+    "method": "tools/call",
+    "params": {
+      "name": "convert_time",
+      "arguments": {
+        "time": "23:00",
+        "from_city": "New York",
+        "to_city": "Tokyo"
+      }
+    }
+  }')
+
+# 23:00 in New York is well past midnight in Tokyo (+13/14h) -> "(next day)".
+run_test "convert_time flags a next-day rollover" "next day" "$RESPONSE"
 echo ""
 
 # Test 3.3: time_difference tool
@@ -262,7 +356,11 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
 
 run_test "time_difference returns result" '"result"' "$RESPONSE"
 run_test "time_difference has content" '"content"' "$RESPONSE"
-run_test "time_difference mentions both cities" "New York" "$RESPONSE"
+run_test "time_difference mentions city1" "New York" "$RESPONSE"
+run_test "time_difference mentions city2" "Tokyo" "$RESPONSE"
+# city1=New York, city2=Tokyo -> Tokyo is ahead. Assert direction, not the exact
+# hour count (13 vs 14) which shifts with US/JP daylight-saving alignment.
+run_test "time_difference states a direction" "ahead\|behind\|same timezone" "$RESPONSE"
 echo ""
 
 # Test 3.4: list_timezones tool
@@ -327,7 +425,7 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
   }')
 
 run_test "Unknown method returns error" '"error"' "$RESPONSE"
-run_test "Unknown method has error code" '"code":-32601' "$RESPONSE"
+run_test "Unknown method has error code" '"code": *-32601' "$RESPONSE"
 echo ""
 
 # Test 4.2: Unknown tool
@@ -399,7 +497,7 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
     "params": {}
   }')
 
-run_test "Response includes jsonrpc version" '"jsonrpc":"2.0"' "$RESPONSE"
+run_test "Response includes jsonrpc version" '"jsonrpc": *"2.0"' "$RESPONSE"
 echo ""
 
 # Test 5.2: Response includes request ID
@@ -414,7 +512,7 @@ RESPONSE=$(curl -s -X POST "$MCP_URL" \
     "params": {}
   }')
 
-run_test "Response echoes request ID" '"id":999' "$RESPONSE"
+run_test "Response echoes request ID" '"id": *999' "$RESPONSE"
 echo ""
 
 # Test 5.3: Content-Type header

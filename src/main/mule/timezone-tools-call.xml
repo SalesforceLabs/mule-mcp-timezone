@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Extracts the tool name and arguments from params, then routes to the
+         appropriate tool sub-flow. Returns -32602 for unknown tool names. -->
+    <sub-flow name="timezone-tools-call-flow" doc:name="Tools Call Sub-Flow">
+        <ee:transform doc:name="Extract Tool Info">
+            <ee:variables>
+                <ee:set-variable variableName="toolName"><![CDATA[%dw 2.0
+output application/java
+---
+vars.params.name]]></ee:set-variable>
+                <ee:set-variable variableName="arguments"><![CDATA[%dw 2.0
+output application/java
+---
+vars.params.arguments default {}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
+        <logger level="INFO" doc:name="Log Tool Call"
+                message="#['Tool Call: ' ++ (vars.toolName default 'unknown') ++ ', Args: ' ++ write(vars.arguments, 'application/json')]"/>
+
+        <choice doc:name="Route Tool">
+            <when expression="#[vars.toolName == 'get_current_time']">
+                <flow-ref doc:name="Get Current Time" name="get-current-time-flow"/>
+            </when>
+            <when expression="#[vars.toolName == 'convert_time']">
+                <flow-ref doc:name="Convert Time" name="convert-time-flow"/>
+            </when>
+            <when expression="#[vars.toolName == 'time_difference']">
+                <flow-ref doc:name="Time Difference" name="time-difference-flow"/>
+            </when>
+            <when expression="#[vars.toolName == 'list_timezones']">
+                <flow-ref doc:name="List Timezones" name="list-timezones-flow"/>
+            </when>
+            <otherwise>
+                <ee:transform doc:name="Unknown Tool Error">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "error": {
+        "code": -32602,
+        "message": "Unknown tool: " ++ (vars.toolName default "null")
+    }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+</mule>

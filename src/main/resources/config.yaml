@@ -1,0 +1,58 @@
+# Timezone MCP Server — Application Properties
+#
+# These are the DEFAULT values used when running locally.
+# Override any property by setting it as a CloudHub property
+# (Runtime Manager → App → Properties tab) for deployed environments.
+#
+# IMPORTANT: Mule's YAML property reader only accepts STRING values, so any
+# NUMERIC value must be wrapped in double quotes (e.g. "8081", "5000"). An
+# unquoted number deploys locally but fails at runtime with:
+#   "YAML configuration properties only supports string values ... Offending property is http.port"
+# Plain strings (paths, hostnames) don't need quotes.
+
+# HTTP listener port. CloudHub 2.0 sets this automatically to 8081.
+http:
+  port: "8081"
+
+# CORS allowed origins for the MCP endpoint.
+#
+# For this MCP server, "*" is safe because:
+#   1. CORS is a browser-only mechanism — Agentforce, Claude Desktop, and all
+#      server-side MCP clients make direct HTTP calls and never check CORS headers.
+#   2. The real security gate is Bearer token validation: every request, regardless
+#      of origin, must carry a valid Anypoint Platform OAuth token.
+#
+# Only change this if you have a *browser-based* MCP client that needs to call this
+# endpoint from a specific origin. In that case, set it to that client's exact origin:
+#   "https://my-browser-mcp-client.com"
+cors:
+  allowedOrigins: "*"
+
+# MCP protocol settings.
+# protocolVersion: the MCP spec version advertised in the initialize handshake.
+# listener.path:   the HTTP path the server listens on.
+mcp:
+  protocol:
+    version: "2024-11-05"
+  listener:
+    path: /mcp
+
+# Anypoint Platform connectivity used for in-app OAuth token validation.
+# platform.host:              Anypoint Platform hostname. Change for GovCloud or private-cloud deployments.
+# auth.profilePath:           Endpoint used to validate Bearer tokens (200 = valid, 401 = invalid).
+# auth.responseTimeout:       Max ms to wait for a response from Anypoint Platform.
+# auth.connectionIdleTimeout: Max ms a pooled connection may sit idle before being closed.
+anypoint:
+  platform:
+    host: anypoint.mulesoft.com
+  auth:
+    profilePath: /accounts/api/profile
+    responseTimeout: "5000"
+    connectionIdleTimeout: "5000"
+
+# Optional API Manager autodiscovery.
+# Set this to the numeric API instance ID from API Manager if you want
+# to attach API Gateway policies to this application.
+# Uncomment <api-gateway:autodiscovery> in timezone-mcp-server.xml to activate.
+# api:
+#   id: 0
