@@ -424,6 +424,7 @@ output application/json
             <ee:message>
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/json
+import try from dw::Runtime
 
 var cityMap = {
     "new york": "America/New_York",
@@ -486,12 +487,14 @@ var cityMap = {
     "hawaii": "Pacific/Honolulu"
 }
 
-var inputCity = lower(vars.arguments.city default "")
-var timezone = cityMap[inputCity] default vars.arguments.city
-var currentTime = now() >> (timezone as TimeZone)
-var formatted = currentTime as String {format: "EEEE, MMMM d, yyyy h:mm:ss a"}
-var tzAbbr = currentTime as String {format: "z"}
+var rawCity = vars.arguments.city default ""
+var inputCity = lower(rawCity)
+var timezone = cityMap[inputCity] default rawCity
+// Coerce inside try() so an unknown city/timezone yields a clean error
+// instead of throwing (which would leak the script via the global handler).
+var attempt = try(() -> now() >> (timezone as TimeZone))
 ---
+if (attempt.success)
 {
     "jsonrpc": "2.0",
     "id": vars.requestId,
@@ -499,9 +502,20 @@ var tzAbbr = currentTime as String {format: "z"}
         "content": [
             {
                 "type": "text",
-                "text": formatted ++ " " ++ tzAbbr ++ " (" ++ timezone ++ ")"
+                "text": (attempt.result as String {format: "EEEE, MMMM d, yyyy h:mm:ss a"})
+                        ++ " " ++ (attempt.result as String {format: "z"})
+                        ++ " (" ++ timezone ++ ")"
             }
         ]
+    }
+}
+else
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "error": {
+        "code": -32602,
+        "message": "Unknown city or timezone: '" ++ rawCity ++ "'. Use a supported city name or an IANA timezone ID (e.g. 'America/New_York')."
     }
 }]]></ee:set-payload>
             </ee:message>
@@ -582,19 +596,32 @@ var fromTz = cityMap[fromInput] default vars.arguments.from_city
 var toTz = cityMap[toInput] default vars.arguments.to_city
 var inputTime = vars.arguments.time default "12:00"
 
-var sourceDateTime = if (inputTime contains "T")
-    inputTime as LocalDateTime
+// The input time is wall-clock time in the SOURCE zone. Build a local
+// date+time string, then anchor it to fromTz by appending that zone's
+// current UTC offset — so "14:30" in New York is read as 14:30 EDT, not
+// 14:30 UTC. (Using `>>` on a LocalDateTime would shift from the system
+// zone (UTC on CloudHub) instead of interpreting the value as fromTz.)
+var dateStr = now() as String {format: "yyyy-MM-dd"}
+var localStr = if (inputTime contains "T")
+    inputTime
 else
-    ((now() as Date) as String ++ "T" ++ inputTime ++ (if (inputTime contains ":") "" else ":00") ++ ":00") as LocalDateTime
-var sourceZoned = sourceDateTime >> (fromTz as TimeZone)
+    dateStr ++ "T" ++ inputTime ++ (if (inputTime contains ":") "" else ":00") ++ ":00"
+var fromOffset = (now() >> (fromTz as TimeZone)) as String {format: "XXX"}
+var sourceZoned = (localStr ++ fromOffset) as DateTime
 var targetZoned = sourceZoned >> (toTz as TimeZone)
 
-var sourceFormatted = sourceZoned as String {format: "h:mm a z"}
+// Shift the source instant into the named fromTz so {format: "z"} renders
+// the zone abbreviation (e.g. EDT) rather than a raw offset (GMT-04:00).
+var sourceDisplay = sourceZoned >> (fromTz as TimeZone)
+var sourceFormatted = sourceDisplay as String {format: "h:mm a z"}
 var targetFormatted = targetZoned as String {format: "h:mm a z"}
-var targetDate = targetZoned as Date
-var dayDiff = (targetDate - (sourceZoned as Date)) as Number
-var dayNote = if (dayDiff > 0) " (next day)"
-              else if (dayDiff < 0) " (previous day)"
+// Compare wall-clock calendar days (source zone vs target zone) so a
+// conversion that crosses midnight is flagged. Comparing the raw instant
+// would always be equal.
+var sourceDay = sourceDisplay as String {format: "yyyy-MM-dd"}
+var targetDay = targetZoned as String {format: "yyyy-MM-dd"}
+var dayNote = if (targetDay > sourceDay) " (next day)"
+              else if (targetDay < sourceDay) " (previous day)"
               else ""
 ---
 {

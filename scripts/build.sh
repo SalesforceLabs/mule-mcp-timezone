@@ -15,8 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Quick Deploy Script for Timezone MCP Server
-# This script packages the Mule application for CloudHub deployment.
+# Build Script for Timezone MCP Server
+# This script packages the Mule application into a deployable JAR for CloudHub.
 #
 # Mule 4.9 must be built with Java 17. If JAVA_HOME isn't already a Java 17
 # JDK, this script tries to locate one so the build uses the right version

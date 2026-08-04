@@ -168,13 +168,13 @@ Confirm the credentials in your `.env` can generate a token:
 Build the deployable Mule application from source:
 
 ```bash
-./scripts/deploy.sh
+./scripts/build.sh
 # runs `mvn clean package` and produces:
 # target/timezone-mcp-server-1.0.0-mule-application.jar
 ```
 
 > [!NOTE]
-> Mule 4.9 must be built with **Java 17**. `scripts/deploy.sh` automatically locates a Java 17 JDK and uses it for the build; if it can't find one, it prints the install command and exits. If you'd rather set things up yourself first, follow the steps for your OS below.
+> Mule 4.9 must be built with **Java 17**. `scripts/build.sh` automatically locates a Java 17 JDK and uses it for the build; if it can't find one, it prints the install command and exits. If you'd rather set things up yourself first, follow the steps for your OS below.
 
 <details>
 <summary><strong>macOS setup</strong></summary>
@@ -191,7 +191,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 mvn -version
 
 # Build
-./scripts/deploy.sh
+./scripts/build.sh
 ```
 </details>
 
@@ -209,14 +209,14 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 mvn -version
 
 # Build
-./scripts/deploy.sh
+./scripts/build.sh
 ```
 </details>
 
 <details>
 <summary><strong>Windows setup</strong></summary>
 
-`scripts/deploy.sh` is a Bash script, so on Windows either build inside **WSL / Git Bash** (follow the Linux steps above), or build natively with **PowerShell** and Maven:
+`scripts/build.sh` is a Bash script, so on Windows either build inside **WSL / Git Bash** (follow the Linux steps above), or build natively with **PowerShell** and Maven:
 
 ```powershell
 # Install Java 17 and Maven (using winget; or install manually)
@@ -229,7 +229,7 @@ $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17"
 # Verify Maven picks up Java 17 (look for "Java version: 17.x")
 mvn -version
 
-# Build (scripts/deploy.sh's job — produces the same JAR under target\)
+# Build (scripts/build.sh's job — produces the same JAR under target\)
 mvn clean package
 ```
 </details>
@@ -325,8 +325,8 @@ Both scripts read `MCP_URL`, `CLIENT_ID`, and `CLIENT_SECRET` from your `.env` f
 
 **Expected**:
 ```
-Total Tests: 39
-Passed: 39
+Total Tests: 51
+Passed: 51
 Failed: 0
 
 ✓ MCP Server is fully compliant!
@@ -377,7 +377,7 @@ curl -X POST "$MCP_URL" \
 
 1. CloudHub deployment status is **Started**
 2. The endpoint returns **401 without a token** and valid results **with a token**
-3. `./scripts/test-mcp-compliance.sh` passes all 39 tests
+3. `./scripts/test-mcp-compliance.sh` passes all 51 tests
 4. All 4 tools return correct results
 
 ---
@@ -492,7 +492,7 @@ mule-mcp-timezone/
 ├── src/main/mule/
 │   └── timezone-mcp-server.xml       ← MCP server source (OAuth validation included)
 ├── scripts/
-│   ├── deploy.sh                     ← Builds the deployable JAR (mvn clean package)
+│   ├── build.sh                      ← Builds the deployable JAR (mvn clean package)
 │   ├── verify-build.sh               ← Checks the built JAR exists and has the OAuth config
 │   ├── verify-credentials.sh         ← Checks Connected App credentials via a token request
 │   ├── smoke-test.sh                 ← Confirms the deployed server rejects unauthenticated requests (401)

@@ -16,7 +16,7 @@
 # limitations under the License.
 #
 # Verify the built JAR exists and contains the OAuth request config.
-# Run after ./scripts/deploy.sh
+# Run after ./scripts/build.sh
 # Usage: ./scripts/verify-build.sh
 
 set -e
@@ -36,7 +36,7 @@ if [ -f "$JAR" ]; then
   echo -e "${GREEN}✓ JAR built${NC}: $JAR"
 else
   echo -e "${RED}✗ JAR not found:${NC} $JAR"
-  echo "  Run ./scripts/deploy.sh first."
+  echo "  Run ./scripts/build.sh first."
   exit 1
 fi
 
