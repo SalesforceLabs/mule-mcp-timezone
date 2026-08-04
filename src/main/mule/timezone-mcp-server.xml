@@ -107,11 +107,13 @@ output application/json
                 <!-- Save the original JSON-RPC request; the validation HTTP call overwrites the payload -->
                 <set-variable variableName="mcpRequest" value="#[payload]" doc:name="Save Request Payload"/>
 
-                <!-- Validate the token: GET /accounts/api/v2/me with the Bearer token.
-                     A non-200 (401/403) or connectivity error marks the request unauthorized. -->
+                <!-- Validate the token: GET /accounts/api/profile with the Bearer token.
+                     (Client-credentials tokens have no user, so /accounts/api/v2/me returns 404;
+                     /accounts/api/profile returns 200 for a valid token and 401 for an invalid one.)
+                     A non-200 or connectivity error marks the request unauthorized. -->
                 <try doc:name="Validate OAuth Token">
                     <http:request method="GET" config-ref="anypoint-auth-config"
-                                  path="/accounts/api/v2/me" doc:name="Call Anypoint /me">
+                                  path="/accounts/api/profile" doc:name="Call Anypoint /profile">
                         <http:headers><![CDATA[#[{"Authorization": vars.authHeader}]]]></http:headers>
                     </http:request>
                     <logger level="INFO" doc:name="Log Auth Success" message="OAuth token validated successfully"/>

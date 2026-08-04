@@ -52,7 +52,7 @@ This server uses OAuth 2.0 **Client Credentials** grant with **in-app token vali
 └────────────┬────────────┘
              │
              │ 3. Extract Bearer token from header
-             │ 4. Call Anypoint: GET /accounts/api/v2/me
+             │ 4. Call Anypoint: GET /accounts/api/profile
              │    Authorization: Bearer <token>
              │
              │ 5a. If 200 → token valid → process request
@@ -65,7 +65,7 @@ The Mule app performs these steps for every incoming request:
 
 1. **Check for Bearer header** — reject immediately if missing (defense-in-depth check)
 2. **Save the original payload** — store the JSON-RPC request before the HTTP call
-3. **Validate the token** — call `GET https://anypoint.mulesoft.com/accounts/api/v2/me` with the Bearer token
+3. **Validate the token** — call `GET https://anypoint.mulesoft.com/accounts/api/profile` with the Bearer token (returns 200 for a valid token, 401 for an invalid one; works with client-credentials tokens, which have no user)
 4. **Restore the payload** — put the JSON-RPC request back for processing
 5. **Process or reject** — 200 from Anypoint routes the MCP request; 401/403 returns 401 to the caller
 
@@ -116,7 +116,7 @@ Go to **Settings** → **Access Management** → **Connected Apps** → **Create
 
 Before saving, click **Add Scopes** on the Create App screen. This opens a 3-step wizard:
 
-1. **Add Scopes** — check the scopes the app needs for tokens to work with `/accounts/api/v2/me`, then click **Next**:
+1. **Add Scopes** — check the scopes the app needs for tokens to work with `/accounts/api/profile`, then click **Next**:
    - ✅ **View Organization** (essential) — under the *General* group
    - ✅ **Design Center Developer** (recommended) — under the *Design Center* group
    - ✅ **Exchange Viewer** (recommended) — under the *Exchange* group
@@ -300,15 +300,14 @@ Confirm the server rejects unauthenticated requests. This reads `MCP_URL` from y
 
 Both scripts read `MCP_URL`, `CLIENT_ID`, and `CLIENT_SECRET` from your `.env` file. If you filled it in during Steps 2.3 and 4, just run them:
 
+**OAuth Tests:**
+
 ```bash
 # OAuth functionality tests
 ./scripts/test-oauth.sh
-
-# Full MCP protocol compliance suite
-./scripts/test-mcp-compliance.sh
 ```
 
-**Expected** (`test-oauth.sh`):
+**Expected**:
 ```
 ✓ Token obtained
 ✓ Correctly rejected unauthenticated request
@@ -317,10 +316,17 @@ Both scripts read `MCP_URL`, `CLIENT_ID`, and `CLIENT_SECRET` from your `.env` f
 ✓ Tool call successful
 ```
 
-**Expected** (`test-mcp-compliance.sh`):
+**MCP Compliance Tests:**
+
+```bash
+# Full MCP protocol compliance suite
+./scripts/test-mcp-compliance.sh
 ```
-Total Tests: 33
-Passed: 33
+
+**Expected**:
+```
+Total Tests: 39
+Passed: 39
 Failed: 0
 
 ✓ MCP Server is fully compliant!
@@ -333,32 +339,35 @@ The compliance suite covers the core MCP protocol (initialize, notifications), t
 Get a token, then exercise each tool:
 
 ```bash
+# Load your credentials and MCP URL from .env
+set -a; . ./.env; set +a
+
 # Get an OAuth token
-TOKEN=$(curl -s -X POST https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token \
+TOKEN=$(curl -s -X POST "$TOKEN_ENDPOINT" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET" \
+  -d "grant_type=client_credentials&client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET" \
   | jq -r '.access_token')
 
 # 1. get_current_time
-curl -X POST https://{your-app-url}/mcp \
+curl -X POST "$MCP_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_current_time","arguments":{"city":"Tokyo"}}}'
 
 # 2. convert_time
-curl -X POST https://{your-app-url}/mcp \
+curl -X POST "$MCP_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"convert_time","arguments":{"time":"15:00","from_city":"New York","to_city":"London"}}}'
 
 # 3. time_difference
-curl -X POST https://{your-app-url}/mcp \
+curl -X POST "$MCP_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"time_difference","arguments":{"city1":"New York","city2":"Tokyo"}}}'
 
 # 4. list_timezones
-curl -X POST https://{your-app-url}/mcp \
+curl -X POST "$MCP_URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_timezones","arguments":{"region":"Asia"}}}'
@@ -368,7 +377,7 @@ curl -X POST https://{your-app-url}/mcp \
 
 1. CloudHub deployment status is **Started**
 2. The endpoint returns **401 without a token** and valid results **with a token**
-3. `./scripts/test-mcp-compliance.sh` passes all 33 tests
+3. `./scripts/test-mcp-compliance.sh` passes all 39 tests
 4. All 4 tools return correct results
 
 ---
@@ -432,7 +441,7 @@ WARN  OAuth token validation failed: HTTP:UNAUTHORIZED
 
 ### "Invalid or expired OAuth token" (401 with a valid-looking token)
 
-**Cause**: The token was rejected by Anypoint's `/me` endpoint.
+**Cause**: The token was rejected by Anypoint's `/accounts/api/profile` endpoint.
 
 **Possible reasons**:
 1. Token expired (tokens last 1 hour)
@@ -447,7 +456,7 @@ TOKEN=$(curl -s -X POST https://anypoint.mulesoft.com/accounts/api/v2/oauth2/tok
   | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
 
 # Should return 200 if the token is valid
-curl -H "Authorization: Bearer $TOKEN" https://anypoint.mulesoft.com/accounts/api/v2/me
+curl -H "Authorization: Bearer $TOKEN" https://anypoint.mulesoft.com/accounts/api/profile
 ```
 
 ### MCP client discovers 0 tools
