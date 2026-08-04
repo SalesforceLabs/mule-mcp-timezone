@@ -102,10 +102,56 @@ output application/json
                 </ee:transform>
             </when>
             <otherwise>
-                <!-- Bearer token present - continue with MCP processing -->
-                <!-- The MCP client validates tokens before sending, so presence check is sufficient -->
-                <logger level="INFO" doc:name="Log Auth Header" message="Authorization header present - processing request"/>
+                <!-- Bearer token present - validate it against Anypoint Platform -->
 
+                <!-- Save the original JSON-RPC request; the validation HTTP call overwrites the payload -->
+                <set-variable variableName="mcpRequest" value="#[payload]" doc:name="Save Request Payload"/>
+
+                <!-- Validate the token: GET /accounts/api/v2/me with the Bearer token.
+                     A non-200 (401/403) or connectivity error marks the request unauthorized. -->
+                <try doc:name="Validate OAuth Token">
+                    <http:request method="GET" config-ref="anypoint-auth-config"
+                                  path="/accounts/api/v2/me" doc:name="Call Anypoint /me">
+                        <http:headers><![CDATA[#[{"Authorization": vars.authHeader}]]]></http:headers>
+                    </http:request>
+                    <logger level="INFO" doc:name="Log Auth Success" message="OAuth token validated successfully"/>
+                    <error-handler>
+                        <on-error-continue type="ANY" doc:name="Token Invalid">
+                            <logger level="WARN" doc:name="Log Auth Failure"
+                                    message="#['OAuth token validation failed: ' ++ (error.errorType.identifier default 'UNKNOWN')]"/>
+                            <set-variable variableName="authFailed" value="#[true]" doc:name="Mark Auth Failed"/>
+                        </on-error-continue>
+                    </error-handler>
+                </try>
+
+                <!-- Restore the original JSON-RPC request for downstream processing -->
+                <set-payload value="#[vars.mcpRequest]" doc:name="Restore Request Payload"/>
+
+                <choice doc:name="Token Valid?">
+                    <!-- Token rejected by Anypoint - return 401 -->
+                    <when expression="#[vars.authFailed default false]">
+                        <ee:transform doc:name="401 Invalid Token">
+                            <ee:message>
+                                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "jsonrpc": "2.0",
+    "id": null,
+    "error": {
+        "code": -32000,
+        "message": "Unauthorized: Invalid or expired OAuth token"
+    }
+}]]></ee:set-payload>
+                            </ee:message>
+                            <ee:variables>
+                                <ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
+                            </ee:variables>
+                        </ee:transform>
+                    </when>
+
+                    <!-- Token valid - process the MCP request -->
+                    <otherwise>
                 <!-- Parse JSON-RPC request -->
                     <ee:transform doc:name="Parse Request">
                         <ee:variables>
@@ -200,6 +246,8 @@ output application/json
                             </ee:transform>
                         </otherwise>
                     </choice>
+                    </otherwise>
+                </choice>
             </otherwise>
         </choice>
 

@@ -26,11 +26,18 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Configuration — load from .env in the repo root (copy .env.example to .env and fill it in)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/.env"
+  set +a
+fi
+
 CLIENT_ID="${CLIENT_ID:-YOUR_CLIENT_ID}"
 CLIENT_SECRET="${CLIENT_SECRET:-YOUR_CLIENT_SECRET}"
 TOKEN_ENDPOINT="${TOKEN_ENDPOINT:-https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token}"
-# Set MCP_URL to your deployed CloudHub endpoint, e.g. https://your-app.region.cloudhub.io/mcp
 MCP_URL="${MCP_URL:-https://YOUR-APP-URL/mcp}"
 
 echo "======================================"
