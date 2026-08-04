@@ -3,10 +3,16 @@
 # These are the DEFAULT values used when running locally.
 # Override any property by setting it as a CloudHub property
 # (Runtime Manager → App → Properties tab) for deployed environments.
+#
+# IMPORTANT: Mule's YAML property reader only accepts STRING values, so any
+# NUMERIC value must be wrapped in double quotes (e.g. "8081", "5000"). An
+# unquoted number deploys locally but fails at runtime with:
+#   "YAML configuration properties only supports string values ... Offending property is http.port"
+# Plain strings (paths, hostnames) don't need quotes.
 
 # HTTP listener port. CloudHub 2.0 sets this automatically to 8081.
 http:
-  port: 8081
+  port: "8081"
 
 # CORS allowed origins for the MCP endpoint.
 #
@@ -41,8 +47,8 @@ anypoint:
     host: anypoint.mulesoft.com
   auth:
     profilePath: /accounts/api/profile
-    responseTimeout: 5000
-    connectionIdleTimeout: 5000
+    responseTimeout: "5000"
+    connectionIdleTimeout: "5000"
 
 # Optional API Manager autodiscovery.
 # Set this to the numeric API instance ID from API Manager if you want
