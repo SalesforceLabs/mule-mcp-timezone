@@ -73,6 +73,16 @@ The Mule app performs these steps for every incoming request:
 
 Token endpoint: `https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token`
 
+## Why Not the Anypoint Connector for MCP?
+
+MuleSoft offers an [Anypoint Connector for MCP](https://docs.mulesoft.com/mcp-connector/latest/) (Select-level) that handles the MCP protocol plumbing automatically — no manual JSON-RPC routing, `initialize` handshake, or `tools/list` generation needed. This project deliberately avoids it for two reasons:
+
+1. **Build-time credentials** — The connector is hosted on the Anypoint Exchange Maven repository, which requires authenticated credentials in `~/.m2/settings.xml`. Without them, `mvn clean package` fails with a 401. All dependencies in this project resolve from the public MuleSoft releases repository, so the build works without any Anypoint credentials.
+
+2. **License requirement** — The MCP Connector is a Select-level connector, which requires a paid Anypoint Platform subscription. This project is designed to run on a free 30-day Anypoint trial account (CloudHub 2.0 Sandbox), where Select connectors are not available.
+
+The MCP protocol is implemented directly using the HTTP Connector and DataWeave, so this server works on any Mule 4.9+ runtime with no paid-tier connector dependencies.
+
 ## Prerequisites
 
 - **Maven 3.x** and **JDK 17** (to build the deployable JAR)
