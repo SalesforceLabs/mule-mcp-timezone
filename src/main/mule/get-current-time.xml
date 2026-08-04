@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Returns the current date/time for the requested city or IANA timezone ID.
+         Uses try() so an unrecognised timezone returns -32602 rather than throwing. -->
+    <sub-flow name="get-current-time-flow" doc:name="Get Current Time">
+        <ee:transform doc:name="Calculate Current Time">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import try from dw::Runtime
+import resolve from dw::Timezones
+
+var rawCity = vars.arguments.city default ""
+var timezone = resolve(rawCity)
+var attempt = try(() -> now() >> (timezone as TimeZone))
+---
+if (attempt.success)
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": (attempt.result as String {format: "EEEE, MMMM d, yyyy h:mm:ss a"})
+                        ++ " " ++ (attempt.result as String {format: "z"})
+                        ++ " (" ++ timezone ++ ")"
+            }
+        ]
+    }
+}
+else
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "error": {
+        "code": -32602,
+        "message": "Unknown city or timezone: '" ++ rawCity ++ "'. Use a supported city name or an IANA timezone ID (e.g. 'America/New_York')."
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+
+</mule>

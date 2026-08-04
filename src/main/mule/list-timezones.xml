@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Returns all supported cities grouped by region, with optional region filter. -->
+    <sub-flow name="list-timezones-flow" doc:name="List Timezones">
+        <ee:transform doc:name="List Available Timezones">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import citiesByRegion from dw::Timezones
+
+var regionFilter = vars.arguments.region default ""
+var filtered = if (regionFilter == "" or regionFilter == null)
+    citiesByRegion
+else
+    { (regionFilter): citiesByRegion[regionFilter] default [] }
+
+var resultText = filtered pluck ((cities, region) ->
+    (region as String) ++ ": " ++ (cities joinBy ", ")
+) joinBy "\n"
+---
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": resultText
+            }
+        ]
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+
+</mule>

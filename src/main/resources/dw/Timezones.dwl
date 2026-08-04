@@ -86,7 +86,14 @@ var cityMap = {
     "perth": "Australia/Perth",
     "auckland": "Pacific/Auckland",
     "honolulu": "Pacific/Honolulu",
-    "hawaii": "Pacific/Honolulu"
+    "hawaii": "Pacific/Honolulu",
+    "cairo": "Africa/Cairo",
+    "lagos": "Africa/Lagos",
+    "nairobi": "Africa/Nairobi",
+    "johannesburg": "Africa/Johannesburg",
+    "joburg": "Africa/Johannesburg",
+    "casablanca": "Africa/Casablanca",
+    "accra": "Africa/Accra"
 }
 
 /**
@@ -97,6 +104,7 @@ var citiesByRegion = {
     "America": ["New York", "Los Angeles", "Chicago", "Denver", "Phoenix", "Houston", "Dallas", "Miami", "Seattle", "Boston", "Washington DC", "Atlanta", "Toronto", "Vancouver", "Mexico City", "Sao Paulo", "Buenos Aires"],
     "Europe": ["London", "Paris", "Berlin", "Madrid", "Rome", "Amsterdam", "Zurich", "Moscow", "Istanbul"],
     "Asia": ["Dubai", "Abu Dhabi", "Riyadh", "Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Karachi", "Dhaka", "Bangkok", "Singapore", "Kuala Lumpur", "Jakarta", "Hong Kong", "Shanghai", "Beijing", "Taipei", "Seoul", "Tokyo"],
+    "Africa": ["Cairo", "Lagos", "Nairobi", "Johannesburg", "Casablanca", "Accra"],
     "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"],
     "Pacific": ["Auckland", "Honolulu"]
 }

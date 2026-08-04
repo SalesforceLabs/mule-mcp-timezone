@@ -28,7 +28,6 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <app.runtime>4.9.19</app.runtime>
         <mule.maven.plugin.version>4.10.1</mule.maven.plugin.version>
     </properties>
     
@@ -39,27 +38,13 @@
                 <artifactId>maven-clean-plugin</artifactId>
                 <version>3.2.0</version>
             </plugin>
+            <!-- mule-maven-plugin is required for mule-application packaging (mvn clean package).
+                 No <configuration> block needed — deployment is done manually via Runtime Manager. -->
             <plugin>
                 <groupId>org.mule.tools.maven</groupId>
                 <artifactId>mule-maven-plugin</artifactId>
                 <version>${mule.maven.plugin.version}</version>
                 <extensions>true</extensions>
-                <configuration>
-                    <cloudHub2Deployment>
-                        <uri>https://anypoint.mulesoft.com</uri>
-                        <muleVersion>${app.runtime}</muleVersion>
-                        <applicationName>timezone-mcp-server</applicationName>
-                        <environment>Sandbox</environment>
-                        <target>Cloudhub-US-East-2</target>
-                        <provider>MC</provider>
-                        <replicas>1</replicas>
-                        <vCores>0.1</vCores>
-                        <connectedAppClientId>${connectedapp.clientId}</connectedAppClientId>
-                        <connectedAppClientSecret>${connectedapp.clientSecret}</connectedAppClientSecret>
-                        <connectedAppGrantType>client_credentials</connectedAppGrantType>
-                        <businessGroup>${anypoint.orgId}</businessGroup>
-                    </cloudHub2Deployment>
-                </configuration>
             </plugin>
         </plugins>
     </build>
@@ -90,7 +75,7 @@
             <name>Anypoint Exchange</name>
             <url>https://maven.anypoint.mulesoft.com/api/v3/maven</url>
             <snapshots>
-                <enabled>true</enabled>
+                <enabled>false</enabled>
             </snapshots>
         </repository>
         <repository>

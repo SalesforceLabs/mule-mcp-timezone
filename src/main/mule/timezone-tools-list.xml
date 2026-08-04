@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026, Salesforce, Inc.
+  SPDX-License-Identifier: Apache-2
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- Returns the MCP tools/list response describing all available timezone tools -->
+    <sub-flow name="timezone-tools-list-flow" doc:name="Tools List Sub-Flow">
+        <ee:transform doc:name="Tool Definitions">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    "jsonrpc": "2.0",
+    "id": vars.requestId,
+    "result": {
+        "tools": [
+            {
+                "name": "get_current_time",
+                "description": "Get the current date and time for a city or timezone. Returns formatted local time with timezone abbreviation.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "city": {
+                            "type": "string",
+                            "description": "City name (e.g., 'Tokyo', 'New York', 'London') or IANA timezone ID (e.g., 'America/New_York')"
+                        }
+                    },
+                    "required": ["city"]
+                }
+            },
+            {
+                "name": "convert_time",
+                "description": "Convert a specific time from one timezone to another. Useful for scheduling meetings across timezones.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "time": {
+                            "type": "string",
+                            "description": "Time to convert in HH:mm format (24-hour) e.g., '14:30' or '09:00'"
+                        },
+                        "from_city": {
+                            "type": "string",
+                            "description": "Source city or timezone (e.g., 'New York', 'Asia/Tokyo')"
+                        },
+                        "to_city": {
+                            "type": "string",
+                            "description": "Target city or timezone (e.g., 'London', 'Europe/Paris')"
+                        }
+                    },
+                    "required": ["time", "from_city", "to_city"]
+                }
+            },
+            {
+                "name": "time_difference",
+                "description": "Get the time difference in hours between two cities. Shows which city is ahead and by how many hours.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "city1": {
+                            "type": "string",
+                            "description": "First city or timezone (e.g., 'New York', 'America/Chicago')"
+                        },
+                        "city2": {
+                            "type": "string",
+                            "description": "Second city or timezone (e.g., 'Tokyo', 'Asia/Kolkata')"
+                        }
+                    },
+                    "required": ["city1", "city2"]
+                }
+            },
+            {
+                "name": "list_timezones",
+                "description": "List available timezones, optionally filtered by region. Regions include: America, Europe, Asia, Africa, Australia, Pacific.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "region": {
+                            "type": "string",
+                            "description": "Optional region filter (e.g., 'Asia', 'Europe', 'America', 'Africa'). If omitted, returns all supported cities."
+                        }
+                    },
+                    "required": []
+                }
+            }
+        ]
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </sub-flow>
+
+</mule>
